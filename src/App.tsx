@@ -22,7 +22,9 @@ import {
   doc, 
   orderBy,
   serverTimestamp,
-  getDocFromServer
+  getDocFromServer,
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { Order, SavedFilter } from './types';
@@ -54,7 +56,8 @@ import {
   MessageSquare,
   Bell,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Settings
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { format } from 'date-fns';
@@ -143,6 +146,9 @@ export default function App() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [aiTips, setAiTips] = useState<string | null>(null);
   const [isGeneratingTips, setIsGeneratingTips] = useState(false);
+  const [storeName, setStoreName] = useState<string>('');
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const orderCounts = useMemo(() => {
@@ -175,6 +181,7 @@ export default function App() {
 
   // Auth listener
   useEffect(() => {
+    document.title = "당근 주문 관리";
     if (isDemoMode) {
       setUser({
         uid: 'demo-user',
@@ -192,10 +199,9 @@ export default function App() {
     return () => unsubscribe();
   }, [isDemoMode]);
 
-  // Firestore listener
+  // Firestore listener (Orders)
   useEffect(() => {
     if (isDemoMode) {
-      // Load from localStorage for demo mode
       const saved = localStorage.getItem('demo_orders');
       if (saved) setOrders(JSON.parse(saved));
       return;
@@ -253,6 +259,20 @@ export default function App() {
     });
 
     return () => unsubscribe();
+  }, [user, isDemoMode]);
+
+  // Load Store Name
+  useEffect(() => {
+    if (isDemoMode) {
+      const saved = localStorage.getItem('store_name');
+      if (saved) setStoreName(saved);
+    } else if (user) {
+      getDoc(doc(db, 'users', user.uid)).then(docSnap => {
+        if (docSnap.exists() && docSnap.data().storeName) {
+          setStoreName(docSnap.data().storeName);
+        }
+      });
+    }
   }, [user, isDemoMode]);
 
   // Test connection
@@ -684,16 +704,17 @@ export default function App() {
     const name = order.name;
     const item = order.item;
     const address = order.address;
+    const greeting = storeName ? `안녕하세요 ${name}님! [${storeName}]입니다. 😊` : `안녕하세요 ${name}님!`;
     
     switch (type) {
       case 'confirm':
-        return `안녕하세요 ${name}님! 당근마켓에서 문의하신 [${item}] 주문 확인되었습니다. 입금 확인되는 대로 발급 도와드리겠습니다. 감사합니다!`;
+        return `${greeting} 당근마켓에서 문의하신 [${item}] 주문 확인되었습니다. 입금 확인되는 대로 발급 도와드리겠습니다. 감사합니다!`;
       case 'shipping':
-        return `안녕하세요 ${name}님! 주문하신 [${item}] 상품 오늘 발송 예정입니다. 배송지: ${address}. 운송장은 발송 후 다시 안내해 드릴게요!`;
+        return `${greeting} 주문하신 [${item}] 상품 오늘 발송 예정입니다. 배송지: ${address}. 운송장은 발송 후 다시 안내해 드릴게요!`;
       case 'complete':
-        return `안녕하세요 ${name}님! 주문하신 [${item}] 상품 배송이 완료되었습니다. 혹시 문제 있으시면 말씀해 주시고, 괜찮으시다면 소중한 후기 부탁드려요. 감사합니다! 좋은 하루 보내세요!`;
+        return `${greeting} 주문하신 [${item}] 상품 배송이 완료되었습니다. 혹시 문제 있으시면 말씀해 주시고, 괜찮으시다면 소중한 후기 부탁드려요. 감사합니다! 좋은 하루 보내세요!`;
       case 'anniversary':
-        return `안녕하세요 ${name}님! 지난번에 주문해 주신 [${item}]는 맛있게 드셨나요? 어느덧 한 달이 지났네요. 😊\n\n혹시 재구매가 필요하시거나 다른 제철 상품이 궁금하시면 언제든 말씀해 주세요! 다시 찾아주시면 더 신경 써서 챙겨드릴게요. 감사합니다!`;
+        return `${greeting} 지난번에 주문해 주신 [${item}]는 맛있게 드셨나요? 어느덧 한 달이 지났네요. 😊\n\n혹시 재구매가 필요하시거나 다른 제철 상품이 궁금하시면 언제든 말씀해 주세요! 다시 찾아주시면 더 신경 써서 챙겨드릴게요. 감사합니다!`;
       default:
         return '';
     }
@@ -720,7 +741,7 @@ export default function App() {
         model: GENAI_MODEL,
         contents: [{
           parts: [{
-            text: `당신은 친절한 당근마켓 판매자입니다. 다음 식재료(또는 상품)의 '신선한 보관방법, 깨끗한 손질법, 맛있는 조리 팁'을 작성해 주세요. 
+            text: `당신은 친절한 당근마켓 판매자${storeName ? ` '${storeName}' (상점명)` : ''}입니다. 다음 식재료(또는 상품)의 '신선한 보관방법, 깨끗한 손질법, 맛있는 조리 팁'을 작성해 주세요. 
           
 [중요 규칙]
 1. 마크다운 기호(예: **, ###, -, * 등)를 절대 사용하지 마세요.
@@ -745,6 +766,23 @@ export default function App() {
       setAiTips("죄송합니다. 팁을 가져오는 중 오류가 발생했습니다.");
     } finally {
       setIsGeneratingTips(false);
+    }
+  };
+
+  const handleSaveStoreName = async (name: string) => {
+    setIsSavingSettings(true);
+    try {
+      if (isDemoMode) {
+        localStorage.setItem('store_name', name);
+      } else if (user) {
+        await setDoc(doc(db, 'users', user.uid), { storeName: name }, { merge: true });
+      }
+      setStoreName(name);
+      setShowSettingsModal(false);
+    } catch (err) {
+      console.error("Save store name error:", err);
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -909,6 +947,13 @@ export default function App() {
               <img src={user.photoURL || ''} className="h-8 w-8 rounded-full" alt={user.displayName || ''} />
               <span className="text-sm font-medium text-slate-700">{user.displayName}</span>
             </div>
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-orange-500"
+              title="상점 설정"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
             <button
               onClick={handleLogout}
               className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
@@ -1752,7 +1797,7 @@ export default function App() {
                       </div>
                       <button 
                         onClick={() => {
-                          const tipMessage = `안녕하세요 ${replyOrder.name}님! 주문하신 [${replyOrder.item}] 더 맛있고 신선하게 즐기실 수 있는 꿀팁 전해드려요. 🥕\n\n${aiTips}\n\n도움이 되셨으면 좋겠습니다. 감사합니다!`;
+                          const tipMessage = `안녕하세요 ${replyOrder.name}님! ${storeName ? `[${storeName}]입니다. ` : ''}주문하신 [${replyOrder.item}] 더 맛있고 신선하게 즐기실 수 있는 꿀팁 전해드려요. 🥕\n\n${aiTips}\n\n도움이 되셨으면 좋겠습니다. 감사합니다!`;
                           copyToClipboard(tipMessage);
                           if (replyOrder.id) markFollowUpSent(replyOrder.id, 'tips');
                         }}
@@ -1797,6 +1842,84 @@ export default function App() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettingsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            >
+              <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+                    <Settings className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900">상점 설정</h3>
+                </div>
+                <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">상점 이름</label>
+                  <p className="text-xs text-slate-500">입력하신 상점 이름은 자동 답장 메시지의 인사말에 사용됩니다.</p>
+                  <input
+                    type="text"
+                    placeholder="예: 민수네 과일가게"
+                    value={storeName}
+                    onChange={(e) => setStoreName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm focus:border-orange-500 focus:outline-none focus:ring-4 focus:ring-orange-500/10"
+                  />
+                  {storeName && (
+                    <button 
+                      onClick={() => setStoreName('')}
+                      className="text-xs font-bold text-red-500 hover:underline"
+                    >
+                      상점 이름 삭제
+                    </button>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-orange-50 p-4">
+                  <h4 className="mb-2 text-xs font-bold text-orange-700 uppercase">미리보기</h4>
+                  <p className="text-sm text-slate-600 italic">
+                    {storeName ? `안녕하세요 고객님! [${storeName}]입니다. 😊` : "안녕하세요 고객님!"}
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowSettingsModal(false)}
+                    className="flex-1 rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-600 transition-all hover:bg-slate-200"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={() => handleSaveStoreName(storeName)}
+                    disabled={isSavingSettings}
+                    className="flex-[2] rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-100 transition-all hover:bg-orange-600 active:scale-95 disabled:opacity-50"
+                  >
+                    {isSavingSettings ? '저장 중...' : '설정 저장하기'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}
