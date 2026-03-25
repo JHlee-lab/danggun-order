@@ -10,6 +10,8 @@ export interface Order {
   capturedImageUrl?: string;
   userId: string;
   createdAt: string;
+  followUpSent?: boolean;
+  tipsSent?: boolean;
 }
 
 export interface SavedFilter {

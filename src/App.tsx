@@ -48,7 +48,13 @@ import {
   Check,
   Bookmark,
   BookmarkPlus,
-  X
+  X,
+  Copy,
+  User as UserIcon,
+  MessageSquare,
+  Bell,
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { format } from 'date-fns';
@@ -129,6 +135,14 @@ export default function App() {
   const [newFilterName, setNewFilterName] = useState('');
   const [showSaveFilterModal, setShowSaveFilterModal] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyCustomerName, setHistoryCustomerName] = useState<string | null>(null);
+  const [historyCustomerPhone, setHistoryCustomerPhone] = useState<string | null>(null);
+  const [showReplyModal, setShowReplyModal] = useState(false);
+  const [replyOrder, setReplyOrder] = useState<Order | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [aiTips, setAiTips] = useState<string | null>(null);
+  const [isGeneratingTips, setIsGeneratingTips] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const orderCounts = useMemo(() => {
@@ -657,6 +671,106 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
+  };
+
+  const generateReplyMessage = (order: Order, type: 'confirm' | 'shipping' | 'complete' | 'anniversary') => {
+    const name = order.name;
+    const item = order.item;
+    const address = order.address;
+    
+    switch (type) {
+      case 'confirm':
+        return `안녕하세요 ${name}님! 당근마켓에서 문의하신 [${item}] 주문 확인되었습니다. 입금 확인되는 대로 발급 도와드리겠습니다. 감사합니다!`;
+      case 'shipping':
+        return `안녕하세요 ${name}님! 주문하신 [${item}] 상품 오늘 발송 예정입니다. 배송지: ${address}. 운송장은 발송 후 다시 안내해 드릴게요!`;
+      case 'complete':
+        return `안녕하세요 ${name}님! 주문하신 [${item}] 상품 배송이 완료되었습니다. 혹시 문제 있으시면 말씀해 주시고, 괜찮으시다면 소중한 후기 부탁드려요. 감사합니다! 좋은 하루 보내세요!`;
+      case 'anniversary':
+        return `안녕하세요 ${name}님! 지난번에 주문해 주신 [${item}]는 맛있게 드셨나요? 어느덧 한 달이 지났네요. 😊\n\n혹시 재구매가 필요하시거나 다른 제철 상품이 궁금하시면 언제든 말씀해 주세요! 다시 찾아주시면 더 신경 써서 챙겨드릴게요. 감사합니다!`;
+      default:
+        return '';
+    }
+  };
+
+  const openHistory = (name: string, phone?: string) => {
+    setHistoryCustomerName(name);
+    setHistoryCustomerPhone(phone || null);
+    setShowHistoryModal(true);
+  };
+
+  const openReply = (order: Order) => {
+    setReplyOrder(order);
+    setAiTips(null);
+    setShowReplyModal(true);
+  };
+
+  const generateAITips = async (item: string) => {
+    if (!item) return;
+    setIsGeneratingTips(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: GENAI_MODEL,
+        contents: [{
+          parts: [{
+            text: `당신은 친절한 당근마켓 판매자입니다. 다음 식재료(또는 상품)의 '신선한 보관방법, 깨끗한 손질법, 맛있는 조리 팁'을 작성해 주세요. 
+          
+[중요 규칙]
+1. 마크다운 기호(예: **, ###, -, * 등)를 절대 사용하지 마세요.
+2. 대신 이모지와 줄바꿈을 사용하여 읽기 편하게 작성하세요.
+3. 불렛 포인트 기호가 필요하다면 '•' 기호를 사용하세요.
+4. 고객이 감동할 수 있도록 정중하고 다정한 말투로 작성해줘. 
+
+상품명: ${item}`,
+          }],
+        }],
+      });
+      
+      // 마크다운 흔적 제거를 위한 추가 처리
+      const cleanText = response.text
+        .replace(/\*\*/g, '')
+        .replace(/#{1,6}\s?/g, '')
+        .trim();
+        
+      setAiTips(cleanText);
+    } catch (err) {
+      console.error("AI Tips error:", err);
+      setAiTips("죄송합니다. 팁을 가져오는 중 오류가 발생했습니다.");
+    } finally {
+      setIsGeneratingTips(false);
+    }
+  };
+
+  const isAnniversary = (orderDate: string): boolean => {
+    if (!orderDate) return false;
+    const date = new Date(orderDate);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // 25~35 days range for "roughly a month"
+    return diffDays >= 25 && diffDays <= 35;
+  };
+
+  const markFollowUpSent = async (id: string, type: 'tips' | 'followUp') => {
+    try {
+      const field = type === 'tips' ? 'tipsSent' : 'followUpSent';
+      if (isDemoMode) {
+        const newOrders = orders.map(o => o.id === id ? { ...o, [field]: true } : o);
+        setOrders(newOrders);
+        localStorage.setItem('demo_orders', JSON.stringify(newOrders));
+      } else {
+        await updateDoc(doc(db, 'orders', id), { [field]: true });
+      }
+    } catch (err) {
+      console.error("Update error:", err);
+    }
   };
 
   const filteredAndSortedOrders = orders
@@ -1271,50 +1385,77 @@ export default function App() {
                               <option value="A/S">A/S</option>
                             </select>
                           </td>
-                          <td className="whitespace-nowrap font-medium">{order.date}</td>
+                          <td className="whitespace-nowrap font-medium">
+                            <div className="flex items-center gap-2">
+                              {order.date}
+                              {isAnniversary(order.date || '') && !order.followUpSent && (
+                                <motion.div
+                                  initial={{ scale: 0.5, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+                                  title="1달 안부 알림"
+                                />
+                              )}
+                            </div>
+                          </td>
                           <td className="font-semibold text-slate-700">{order.item}</td>
                           <td>
-                            <div className="flex flex-col">
-                              <span>{order.name}</span>
+                            <button 
+                              onClick={() => openHistory(order.name, order.phone)}
+                              className="flex flex-col text-left transition-colors hover:text-orange-600"
+                            >
+                              <span className="font-medium underline decoration-slate-200 underline-offset-4">{order.name}</span>
                               {getRepeatCount(order.name, order.phone) > 1 && (
                                 <span className="mt-0.5 w-fit rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
                                   재구매 {getRepeatCount(order.name, order.phone)}회
                                 </span>
                               )}
-                            </div>
+                            </button>
                           </td>
                           <td className="whitespace-nowrap">{order.phone}</td>
                           <td className="max-w-xs truncate">{order.address}</td>
                           <td className="font-bold text-orange-600">
                             {order.amount?.toLocaleString()}원
                           </td>
-                          <td>
-                            {!showSingleDeleteConfirm || orderToDelete !== order.id ? (
-                              <button
-                                onClick={() => order.id && deleteOrder(order.id)}
-                                className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={confirmDeleteOrder}
-                                  className="text-[10px] font-bold text-red-600 hover:underline"
-                                >
-                                  확인
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setShowSingleDeleteConfirm(false);
-                                    setOrderToDelete(null);
-                                  }}
-                                  className="text-[10px] font-bold text-slate-400 hover:underline"
-                                >
-                                  취소
-                                </button>
-                              </div>
-                            )}
+                          <td className="w-20">
+                            <div className="flex items-center gap-1">
+                              {!showSingleDeleteConfirm || orderToDelete !== order.id ? (
+                                <>
+                                  <button
+                                    onClick={() => openReply(order)}
+                                    className="rounded p-1 text-slate-300 hover:bg-blue-50 hover:text-blue-500"
+                                    title="간편 답장"
+                                  >
+                                    <MessageSquare className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => order.id && deleteOrder(order.id)}
+                                    className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500"
+                                    title="삭제"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={confirmDeleteOrder}
+                                    className="text-[10px] font-bold text-red-600 hover:underline"
+                                  >
+                                    확인
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setShowSingleDeleteConfirm(false);
+                                      setOrderToDelete(null);
+                                    }}
+                                    className="text-[10px] font-bold text-slate-400 hover:underline"
+                                  >
+                                    취소
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </td>
                         </motion.tr>
                       ))
@@ -1428,6 +1569,234 @@ export default function App() {
                   {isSavingFilter ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : '저장하기'}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* History Modal */}
+      <AnimatePresence>
+        {showHistoryModal && historyCustomerName && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowHistoryModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl"
+            >
+              <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+                    <UserIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">{historyCustomerName} 님의 주문 내역</h3>
+                    <p className="text-sm text-slate-500">{historyCustomerPhone || '연락처 정보 없음'}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="max-h-[400px] overflow-y-auto pr-2">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-white">
+                    <tr className="border-b border-slate-100 text-xs font-bold text-slate-400 uppercase">
+                      <th className="pb-3">날짜</th>
+                      <th className="pb-3">품목</th>
+                      <th className="pb-3">금액</th>
+                      <th className="pb-3">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {orders
+                      .filter(o => 
+                        o.name === historyCustomerName || 
+                        (o.phone && historyCustomerPhone && o.phone.replace(/\D/g, '') === historyCustomerPhone.replace(/\D/g, ''))
+                      )
+                      .map(o => (
+                        <tr key={o.id} className="hover:bg-slate-50">
+                          <td className="py-3 text-slate-500">{o.date}</td>
+                          <td className="py-3 font-semibold text-slate-700">{o.item}</td>
+                          <td className="py-3 font-bold text-orange-600">{o.amount?.toLocaleString()}원</td>
+                          <td className="py-3">
+                            <span className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                              o.status === '완료' ? "bg-green-100 text-green-700" :
+                              o.status === 'A/S' ? "bg-red-100 text-red-700" :
+                              "bg-amber-100 text-amber-700"
+                            )}>
+                              {o.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Reply Modal */}
+      <AnimatePresence>
+        {showReplyModal && replyOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowReplyModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            >
+              <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                    <MessageSquare className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900">간편 답장 생성</h3>
+                </div>
+                <button onClick={() => setShowReplyModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-2">
+                {/* Regular Templates */}
+                {(['confirm', 'shipping', 'complete'] as const).map(type => (
+                  <div key={type} className="group relative rounded-xl border border-slate-100 bg-slate-50 p-4 transition-all hover:border-blue-200 hover:bg-white hover:shadow-md">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-bold text-blue-600 uppercase">
+                        {type === 'confirm' && '입금 확인/예약'}
+                        {type === 'shipping' && '발급/배송 안내'}
+                        {type === 'complete' && '판매 완료/후기 요청'}
+                      </span>
+                      <button 
+                        onClick={() => copyToClipboard(generateReplyMessage(replyOrder, type))}
+                        className="flex items-center gap-1 rounded-lg bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-blue-50 hover:text-blue-600 active:scale-95"
+                      >
+                        <Copy className="h-3 w-3" />
+                        복사
+                      </button>
+                    </div>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      {generateReplyMessage(replyOrder, type)}
+                    </p>
+                  </div>
+                ))}
+
+                {/* Anniversary Template */}
+                {isAnniversary(replyOrder.date || '') && (
+                  <div className="group relative rounded-xl border border-red-100 bg-red-50 p-4 transition-all hover:border-red-200 hover:bg-white hover:shadow-md">
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Bell className="h-4 w-4 text-red-500" />
+                        <span className="text-xs font-bold text-red-600 uppercase">1달 기념 안부 & 재구매 유도</span>
+                        {replyOrder.followUpSent && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                      </div>
+                      <button 
+                        onClick={() => {
+                          copyToClipboard(generateReplyMessage(replyOrder, 'anniversary'));
+                          if (replyOrder.id) markFollowUpSent(replyOrder.id, 'followUp');
+                        }}
+                        className="flex items-center gap-1 rounded-lg bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-600 active:scale-95"
+                      >
+                        <Copy className="h-3 w-3" />
+                        복사
+                      </button>
+                    </div>
+                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                      {generateReplyMessage(replyOrder, 'anniversary')}
+                    </p>
+                  </div>
+                )}
+
+                {/* AI Product Tips Section */}
+                <div className="rounded-xl border border-orange-100 bg-orange-50/50 p-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-orange-500" />
+                      <h4 className="text-sm font-bold text-slate-900">AI 상품 관리 꿀팁 (보관/손질/조리)</h4>
+                    </div>
+                    {aiTips && (
+                      <button 
+                        onClick={() => generateAITips(replyOrder.item)}
+                        disabled={isGeneratingTips}
+                        className="text-slate-400 hover:text-orange-500 disabled:opacity-50"
+                        title="새로고침"
+                      >
+                        <RefreshCw className={cn("h-4 w-4", isGeneratingTips && "animate-spin")} />
+                      </button>
+                    )}
+                  </div>
+
+                  {aiTips ? (
+                    <div className="space-y-3">
+                      <div className="rounded-lg bg-white p-3 text-sm text-slate-600 leading-relaxed shadow-sm border border-orange-100 whitespace-pre-wrap">
+                        {aiTips}
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const tipMessage = `안녕하세요 ${replyOrder.name}님! 주문하신 [${replyOrder.item}] 더 맛있고 신선하게 즐기실 수 있는 꿀팁 전해드려요. 🥕\n\n${aiTips}\n\n도움이 되셨으면 좋겠습니다. 감사합니다!`;
+                          copyToClipboard(tipMessage);
+                          if (replyOrder.id) markFollowUpSent(replyOrder.id, 'tips');
+                        }}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 py-2 text-sm font-bold text-white shadow-md shadow-orange-100 hover:bg-orange-600 active:scale-95"
+                      >
+                        <Copy className="h-4 w-4" />
+                        전문가 꿀팁 메시지 복사
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => generateAITips(replyOrder.item)}
+                      disabled={isGeneratingTips}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-orange-200 py-6 text-sm font-bold text-orange-600 transition-colors hover:bg-orange-100/50 disabled:opacity-50"
+                    >
+                      {isGeneratingTips ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          AI가 꿀팁을 작성하고 있습니다...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-5 w-5" />
+                          상품 맞춤 꿀팁 생성하기
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {copySuccess && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="mt-6 flex items-center justify-center gap-2 text-sm font-bold text-green-600"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    클립보드에 복사되었습니다!
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </div>
         )}
