@@ -1,0 +1,113 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "당근마켓 채팅에서 추출된 주문 정보",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "주문 고유 ID"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "주문 날짜"
+        },
+        "item": {
+          "type": "string",
+          "description": "품목"
+        },
+        "name": {
+          "type": "string",
+          "description": "구매자 이름"
+        },
+        "address": {
+          "type": "string",
+          "description": "배송 주소"
+        },
+        "phone": {
+          "type": "string",
+          "description": "연락처"
+        },
+        "amount": {
+          "type": "number",
+          "description": "구매 금액"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["대기", "완료", "A/S"],
+          "description": "주문 상태"
+        },
+        "capturedImageUrl": {
+          "type": "string",
+          "description": "분석에 사용된 캡쳐 이미지 URL (선택사항)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "주문을 등록한 사용자 ID"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "데이터 생성 일시"
+        }
+      },
+      "required": ["item", "name", "userId", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "사용자 프로필 정보",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "이메일 주소"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "표시 이름"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "프로필 사진 URL"
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "SavedFilter": {
+      "title": "SavedFilter",
+      "description": "사용자가 저장한 필터 조합",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string", "description": "필터 이름" },
+        "period": { "type": "string", "enum": ["all", "year", "month", "lastMonth", "week", "yesterday"] },
+        "status": { "type": "string", "enum": ["all", "대기", "완료", "A/S"] },
+        "searchText": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "period", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "주문 목록"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "사용자 정보"
+    },
+    "/savedFilters/{filterId}": {
+      "schema": "SavedFilter",
+      "description": "저장된 필터 목록"
+    }
+  }
+}

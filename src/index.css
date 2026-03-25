@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+@theme {
+  --font-sans: "Inter", "Noto Sans KR", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+@layer components {
+  .sheet-table {
+    @apply w-full border-collapse bg-white text-sm;
+  }
+  .sheet-table th {
+    @apply border border-slate-200 bg-slate-100 p-2 text-left font-medium text-slate-600;
+  }
+  .sheet-table td {
+    @apply border border-slate-200 p-2;
+  }
+  .sheet-table tr:hover {
+    @apply bg-slate-50;
+  }
+}

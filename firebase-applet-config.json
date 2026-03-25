@@ -1,0 +1,10 @@
+{
+  "projectId": "danggun-orders",
+  "appId": "1:879866999793:web:75cf1f48a903316ab34a50",
+  "apiKey": "AIzaSyD-kH6gFbmEwawlyikBsM-QaD_J0Yt5loE",
+  "authDomain": "danggun-orders.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "danggun-orders.firebasestorage.app",
+  "messagingSenderId": "879866999793",
+  "measurementId": ""
+}
